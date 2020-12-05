@@ -1,6 +1,18 @@
   
 import Post from '../../models/post';
+import mongoose from 'mongoose';
+import Joi from 'joi';
 
+const { ObjectId } = mongoose.Types;
+
+export const checkObjectId = (ctx, next) => {
+    const { id } = ctx.params;
+    if ( !ObjectId.isValid(id)) {
+        ctx.status = 400;
+        return;
+    }
+    return next;
+}
 
 /*
     POST /api/posts
@@ -12,6 +24,22 @@ import Post from '../../models/post';
 */
 
 export const write = async ctx => {
+
+    const schema = Joi.object().keys({
+        title: Joi.string().required(), //required()가 있으면 필수 항목
+        body: Joi.string().required(),
+        tags: Joi.array()
+            .items(Joi.string())
+            .required()
+    });
+
+    const result = schema.validate(ctx.request.body);
+    if (result.error) {
+        ctx.status = 400;
+        ctx.body = result.error;
+        return;
+    }
+
     const { title, body, tags } = ctx.request.body;
     const post = new Post({
         title,
@@ -30,9 +58,31 @@ export const write = async ctx => {
     GET /api/posts
  */
 export const list = async ctx => {
+
+    //query는 문자열이기 때문에 숫자로 변환 필요
+    // 값이 주어지지 않았다면 1을 기본으로 사용
+
+    const page = parseInt(ctx.query.page || '1', 10);
+    if(page < 1){
+        ctx.status = 400;
+        return;
+    }
+
     try {
-        const posts = await Post.find().exec();
-        ctx.body = posts;
+        const posts = await Post.find()
+        .sort({ _id: -1 })
+        .limit(10)
+        .skip((page - 1) * 10)
+        .lean() //처음부터 JSON 형태로 데이터 조회 ( = .map(post => post.toJSON()))
+        .exec();
+        const postCount = await Post.countDocuments().exec();
+        ctx.set('Last-Page', Math.ceil(postCount / 10));
+        ctx.body = posts
+            .map(post => ({
+                ...post,
+                body:
+                    post.body.length < 200 ? post.body : `${post.body.slice(0, 200)}...`,
+            }));
     } catch (error) {
         ctx.throw(500, error);
     }
@@ -79,18 +129,32 @@ export const read = async ctx => {
  */
  export const update = async ctx => {
      const { id } = ctx.params;
-     try {
-         const post = await Post.findByIdAndUpdate(id, ctx.request.body, {
-             new: true, // 이 값을 설정하면 업데이트된 데이터를 반환합니다.
-             // false일 때는 업데이트되기 전의 데이터를 반환합니다.
-         }).exec();
-         if (!post) {
-             ctx.status = 404;
-             return;
-         }
-         ctx.body;
-     } catch (e) {
-         ctx.throw(500, e);
-     }
+
+    const schema = Joi.object().keys({
+        title: Joi.string(),
+        body: Joi.string(),
+        tags: Joi.array().items(Joi.string())
+    });
+
+    const result = schema.validate(ctx.request.body);
+    if (result.error) {
+        ctx.status = 400;
+        ctx.body = result.error;
+        return;
+    }
+
+    try {
+        const post = await Post.findByIdAndUpdate(id, ctx.request.body, {
+            new: true, // 이 값을 설정하면 업데이트된 데이터를 반환합니다.
+            // false일 때는 업데이트되기 전의 데이터를 반환합니다.
+        }).exec();
+        if (!post) {
+            ctx.status = 404;
+            return;
+        }
+        ctx.body;
+    } catch (e) {
+        ctx.throw(500, e);
+    }
  };
 
