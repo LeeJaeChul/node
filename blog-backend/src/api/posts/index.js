@@ -19,6 +19,6 @@ post.patch('/:id', checkLoggedIn, postsCtrl.checkOwnPost, postsCtrl.update);
 
 posts.use('/:id', postsCtrl.getPostById, post.routes());
 
-logger.info('TEST'+ posts );
+//logger.info('TEST'+ posts );
 
 export default posts;
